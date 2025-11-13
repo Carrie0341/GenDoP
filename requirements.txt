@@ -31,7 +31,7 @@ executing==2.2.0
 fastapi==0.115.14
 ffmpy==0.6.0
 filelock==3.13.1
-flash_attn==2.8.0.post2
+# flash_attn==2.8.0.post2
 fonttools==4.58.4
 frozenlist==1.7.0
 fsspec==2024.6.1

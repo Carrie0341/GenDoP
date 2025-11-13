@@ -160,7 +160,8 @@ tqdm==4.67.1
 transformers==4.47.1
 trimesh==4.6.13
 triton==3.2.0
-typeguard==2.13.3
+# typeguard==2.13.3
+typeguard
 typer==0.16.0
 typing-inspect==0.9.0
 typing-inspection==0.4.1

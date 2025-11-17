@@ -26,9 +26,9 @@ def process_clip_on_gpu(args_tuple):
     env = os.environ.copy()
     env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
     # 限制CPU線程數，減少CPU負載
-    env['OMP_NUM_THREADS'] = '4'
-    env['MKL_NUM_THREADS'] = '4'
-    env['NUMEXPR_NUM_THREADS'] = '4'
+    env['OMP_NUM_THREADS'] = '24'
+    env['MKL_NUM_THREADS'] = '24'
+    env['NUMEXPR_NUM_THREADS'] = '24'
 
     cmd = [
         'python', 'run_single.py',

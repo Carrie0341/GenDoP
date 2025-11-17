@@ -37,6 +37,6 @@ for clip in clip_list:
     print(cmd)
     os.system(cmd)
     glb_path = os.path.join(output_path, "NULL/scene.glb")
-    if os.path.exists(glb_path):
-        print(f"Deleting {glb_path}")
-        os.remove(glb_path)
+    # if os.path.exists(glb_path):
+    #     print(f"Deleting {glb_path}")
+    #     os.remove(glb_path)

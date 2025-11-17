@@ -24,7 +24,7 @@ import matplotlib.pyplot as pl
 pl.ion()
 
 torch.backends.cuda.matmul.allow_tf32 = True  # for gpu >= Ampere and pytorch >= 1.12
-batch_size = 1
+batch_size = 4
 
 
 def get_args_parser():
@@ -49,10 +49,11 @@ def get_args_parser():
     parser.add_argument('--fps', type=int, default=0, help='FPS for video processing')
     parser.add_argument('--num_frames', type=int, default=200, help='Maximum number of frames for video processing')
     parser.add_argument('--range', type=str, default='')
-    
+
     # Add "share" argument if you want to make the demo accessible on the public internet
     parser.add_argument("--share", action='store_true', default=False, help="Share the demo")
     return parser
+
 
 def get_3D_model_from_scene(outdir, silent, scene, min_conf_thr=3, as_pointcloud=False, mask_sky=False,
                             clean_depth=False, transparent_cams=False, cam_size=0.05, show_cam=True, save_name=None, thr_for_init_conf=True):
@@ -80,13 +81,13 @@ def get_3D_model_from_scene(outdir, silent, scene, min_conf_thr=3, as_pointcloud
     cam_color = [cmap(i/len(rgbimg))[:3] for i in range(len(rgbimg))]
     cam_color = [(255*c[0], 255*c[1], 255*c[2]) for c in cam_color]
     return convert_scene_output_to_glb(outdir, rgbimg, pts3d, msk, focals, cams2world, as_pointcloud=as_pointcloud,
-                                        transparent_cams=transparent_cams, cam_size=cam_size, show_cam=show_cam, silent=silent, save_name=save_name,
-                                        cam_color=cam_color)
+                                       transparent_cams=transparent_cams, cam_size=cam_size, show_cam=show_cam, silent=silent, save_name=save_name,
+                                       cam_color=cam_color)
 
 
 def get_reconstructed_scene(args, outdir, model, device, silent, image_size, filelist, schedule, niter, min_conf_thr,
-                            as_pointcloud, mask_sky, clean_depth, transparent_cams, cam_size, show_cam, scenegraph_type, winsize, refid, 
-                            seq_name, new_model_weights, temporal_smoothing_weight, translation_weight, shared_focal, 
+                            as_pointcloud, mask_sky, clean_depth, transparent_cams, cam_size, show_cam, scenegraph_type, winsize, refid,
+                            seq_name, new_model_weights, temporal_smoothing_weight, translation_weight, shared_focal,
                             flow_loss_weight, flow_loss_start_iter, flow_loss_threshold, use_gt_mask, fps, num_frames):
     """
     from a list of images, run dust3r inference, global aligner.
@@ -112,10 +113,10 @@ def get_reconstructed_scene(args, outdir, model, device, silent, image_size, fil
     pairs = make_pairs(imgs, scene_graph=scenegraph_type, prefilter=None, symmetrize=True)
     output = inference(pairs, model, device, batch_size=batch_size, verbose=not silent)
     if len(imgs) > 2:
-        mode = GlobalAlignerMode.PointCloudOptimizer  
-        scene = global_aligner(output, device=device, mode=mode, verbose=not silent, shared_focal = shared_focal, temporal_smoothing_weight=temporal_smoothing_weight, translation_weight=translation_weight,
+        mode = GlobalAlignerMode.PointCloudOptimizer
+        scene = global_aligner(output, device=device, mode=mode, verbose=not silent, shared_focal=shared_focal, temporal_smoothing_weight=temporal_smoothing_weight, translation_weight=translation_weight,
                                flow_loss_weight=flow_loss_weight, flow_loss_start_epoch=flow_loss_start_iter, flow_loss_thre=flow_loss_threshold, use_self_mask=not use_gt_mask,
-                               num_total_iter=niter, empty_cache= len(filelist) > 72)
+                               num_total_iter=niter, empty_cache=len(filelist) > 72)
     else:
         mode = GlobalAlignerMode.PairViewer
         scene = global_aligner(output, device=device, mode=mode, verbose=not silent)
@@ -124,10 +125,10 @@ def get_reconstructed_scene(args, outdir, model, device, silent, image_size, fil
     if mode == GlobalAlignerMode.PointCloudOptimizer:
         loss = scene.compute_global_alignment(init='mst', niter=niter, schedule=schedule, lr=lr)
 
-    save_folder = f'{args.output_dir}/{seq_name}'  #default is 'demo_tmp/NULL'
+    save_folder = f'{args.output_dir}/{seq_name}'  # default is 'demo_tmp/NULL'
     os.makedirs(save_folder, exist_ok=True)
     outfile = get_3D_model_from_scene(save_folder, silent, scene, min_conf_thr, as_pointcloud, mask_sky,
-                            clean_depth, transparent_cams, cam_size, show_cam)
+                                      clean_depth, transparent_cams, cam_size, show_cam)
 
     poses = scene.save_tum_poses(f'{save_folder}/pred_traj.txt')
     K = scene.save_intrinsics(f'{save_folder}/pred_intrinsics.txt')
@@ -136,7 +137,7 @@ def get_reconstructed_scene(args, outdir, model, device, silent, image_size, fil
     # conf = scene.save_conf_maps(save_folder)
     # init_conf = scene.save_init_conf_maps(save_folder)
     rgbs = scene.save_rgb_imgs(save_folder)
-    # enlarge_seg_masks(save_folder, kernel_size=5 if use_gt_mask else 3) 
+    # enlarge_seg_masks(save_folder, kernel_size=5 if use_gt_mask else 3)
 
     # also return rgb, depth and confidence imgs
     # depth is normalized with the max value for all images
@@ -184,7 +185,7 @@ def set_scenegraph_options(inputfiles, winsize, refid, scenegraph_type):
         num_files = len(inputfiles) if inputfiles is not None else 1
     max_winsize = max(1, math.ceil((num_files-1)/2))
     if scenegraph_type == "swin" or scenegraph_type == "swin2stride" or scenegraph_type == "swinstride":
-        winsize = gradio.Slider(label="Scene Graph: Window Size", value=min(max_winsize,5),
+        winsize = gradio.Slider(label="Scene Graph: Window Size", value=min(max_winsize, 5),
                                 minimum=1, maximum=max_winsize, step=1, visible=True)
         refid = gradio.Slider(label="Scene Graph: Id", value=0, minimum=0,
                               maximum=num_files-1, step=1, visible=False)
@@ -268,8 +269,8 @@ def main_demo(tmpdirname, model, device, image_size, server_name, server_port, s
             run_btn.click(fn=recon_fun,
                           inputs=[inputfiles, schedule, niter, min_conf_thr, as_pointcloud,
                                   mask_sky, clean_depth, transparent_cams, cam_size, show_cam,
-                                  scenegraph_type, winsize, refid, seq_name, new_model_weights, 
-                                  temporal_smoothing_weight, translation_weight, shared_focal, 
+                                  scenegraph_type, winsize, refid, seq_name, new_model_weights,
+                                  temporal_smoothing_weight, translation_weight, shared_focal,
                                   flow_loss_weight, flow_loss_start_iter, flow_loss_threshold, use_davis_gt_mask,
                                   fps, num_frames],
                           outputs=[scene, outmodel, outgallery])
@@ -334,7 +335,7 @@ if __name__ == '__main__':
         else:   # input_dir is a video
             input_files = [args.input_dir]
         recon_fun = functools.partial(get_reconstructed_scene, args, tmpdirname, model, args.device, args.silent, args.image_size)
-        
+
         # Call the function with default parameters
         scene, outfile, imgs = recon_fun(
             filelist=input_files,

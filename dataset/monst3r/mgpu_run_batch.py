@@ -20,27 +20,21 @@ def process_clip_on_gpu(args_tuple):
 
     os.makedirs(output_path, exist_ok=True)
 
-    # 創建新的環境變量，只暴露一個GPU
-    env = os.environ.copy()
-    env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
-
-    # 使用 cuda:0 因為只暴露了一個GPU
+    # 直接指定GPU設備，不使用CUDA_VISIBLE_DEVICES
     cmd = [
         'python', 'run_single.py',
         '--input_dir', clip_path,
         '--output_dir', output_path,
         '--range', f'{start},{end}',
-        '--device', 'cuda:0'  # 重要：使用cuda:0
+        '--device', f'cuda:{gpu_id}'  # 直接指定GPU編號
     ]
 
     print(f"[GPU {gpu_id}] Processing {clip}")
 
     try:
-        # 使用subprocess而不是os.system，可以更好地控制環境變量
         result = subprocess.run(
             cmd,
-            env=env,
-            capture_output=False,  # 改為True可以捕獲輸出
+            capture_output=False,
             text=True
         )
 
@@ -50,6 +44,16 @@ def process_clip_on_gpu(args_tuple):
             return f"Failed: {clip} on GPU {gpu_id} (exit code: {result.returncode})"
     except Exception as e:
         return f"Error: {clip} on GPU {gpu_id} - {str(e)}"
+
+
+def worker_process(gpu_id, clips, input_dir, output_dir, start, end, result_queue):
+    """每個GPU一個工作進程，順序處理分配給它的clips"""
+    results = []
+    for clip in clips:
+        result = process_clip_on_gpu((clip, gpu_id, input_dir, output_dir, start, end))
+        results.append(result)
+        result_queue.put(result)
+    return results
 
 
 def main():
@@ -89,16 +93,40 @@ def main():
     print(f"Total clips: {len(clip_list)}")
     print(f"Using {args.num_gpus} GPUs")
 
-    # 為每個clip準備參數
-    tasks = []
+    # 將clips分配給各個GPU
+    clips_per_gpu = [[] for _ in range(args.num_gpus)]
     for i, clip in enumerate(clip_list):
         gpu_id = i % args.num_gpus
-        tasks.append((clip, gpu_id, input_dir, output_dir, start, end if end else len(clip_list)))
+        clips_per_gpu[gpu_id].append(clip)
 
-    # 使用進程池並行處理
-    print(f"Starting parallel processing with {args.num_gpus} workers...")
-    with mp.Pool(processes=args.num_gpus) as pool:
-        results = pool.map(process_clip_on_gpu, tasks)
+    # 打印分配情況
+    for gpu_id in range(args.num_gpus):
+        print(f"GPU {gpu_id}: {len(clips_per_gpu[gpu_id])} clips")
+
+    # 創建結果隊列
+    result_queue = mp.Queue()
+
+    # 為每個GPU啟動一個進程
+    processes = []
+    for gpu_id in range(args.num_gpus):
+        if len(clips_per_gpu[gpu_id]) > 0:
+            p = mp.Process(
+                target=worker_process,
+                args=(gpu_id, clips_per_gpu[gpu_id], input_dir, output_dir,
+                      start, end if end else len(clip_list), result_queue)
+            )
+            p.start()
+            processes.append(p)
+            print(f"Started worker process for GPU {gpu_id}")
+
+    # 等待所有進程完成
+    for p in processes:
+        p.join()
+
+    # 收集結果
+    results = []
+    while not result_queue.empty():
+        results.append(result_queue.get())
 
     # 打印結果統計
     print("\n" + "="*50)

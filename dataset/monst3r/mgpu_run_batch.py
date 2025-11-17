@@ -4,6 +4,7 @@ import random
 import argparse
 import multiprocessing as mp
 import subprocess
+import torch
 
 
 def process_clip_on_gpu(args_tuple):
@@ -20,13 +21,17 @@ def process_clip_on_gpu(args_tuple):
 
     os.makedirs(output_path, exist_ok=True)
 
-    # 直接指定GPU設備，不使用CUDA_VISIBLE_DEVICES
+    # 使用環境變量讓進程只看到一個GPU
+    env = os.environ.copy()
+    env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+
+    # 在子進程中，cuda:0 就是實際的 gpu_id
     cmd = [
         'python', 'run_single.py',
         '--input_dir', clip_path,
         '--output_dir', output_path,
         '--range', f'{start},{end}',
-        '--device', f'cuda:{gpu_id}'  # 直接指定GPU編號
+        '--device', 'cuda:0'  # 總是使用 cuda:0，因為只有一個可見GPU
     ]
 
     print(f"[GPU {gpu_id}] Processing {clip}")
@@ -35,7 +40,8 @@ def process_clip_on_gpu(args_tuple):
         result = subprocess.run(
             cmd,
             capture_output=False,
-            text=True
+            text=True,
+            env=env  # 傳遞修改後的環境變量
         )
 
         if result.returncode == 0:
@@ -49,7 +55,8 @@ def process_clip_on_gpu(args_tuple):
 def worker_process(gpu_id, clips, input_dir, output_dir, start, end, result_queue):
     """每個GPU一個工作進程，順序處理分配給它的clips"""
     results = []
-    for clip in clips:
+    for i, clip in enumerate(clips, 1):
+        print(f"[GPU {gpu_id}] Progress: {i}/{len(clips)}")
         result = process_clip_on_gpu((clip, gpu_id, input_dir, output_dir, start, end))
         results.append(result)
         result_queue.put(result)
@@ -59,8 +66,22 @@ def worker_process(gpu_id, clips, input_dir, output_dir, start, end, result_queu
 def main():
     parser = argparse.ArgumentParser(description="Process a range of numbers.")
     parser.add_argument('--range', type=str, help='Range of values in the form start,end')
-    parser.add_argument('--num_gpus', type=int, default=8, help='Number of GPUs to use')
+    parser.add_argument('--num_gpus', type=int, default=None, help='Number of GPUs to use (default: all available)')
     args = parser.parse_args()
+
+    # 自動檢測可用的GPU數量
+    available_gpus = torch.cuda.device_count()
+    if args.num_gpus is None:
+        num_gpus = available_gpus
+    else:
+        num_gpus = min(args.num_gpus, available_gpus)
+
+    if num_gpus == 0:
+        print("ERROR: No CUDA GPUs available!")
+        return
+
+    print(f"Available GPUs: {available_gpus}")
+    print(f"Using GPUs: {num_gpus}")
 
     start, end = 0, None
     if args.range:
@@ -91,16 +112,15 @@ def main():
     random.shuffle(clip_list)
 
     print(f"Total clips: {len(clip_list)}")
-    print(f"Using {args.num_gpus} GPUs")
 
     # 將clips分配給各個GPU
-    clips_per_gpu = [[] for _ in range(args.num_gpus)]
+    clips_per_gpu = [[] for _ in range(num_gpus)]
     for i, clip in enumerate(clip_list):
-        gpu_id = i % args.num_gpus
+        gpu_id = i % num_gpus
         clips_per_gpu[gpu_id].append(clip)
 
     # 打印分配情況
-    for gpu_id in range(args.num_gpus):
+    for gpu_id in range(num_gpus):
         print(f"GPU {gpu_id}: {len(clips_per_gpu[gpu_id])} clips")
 
     # 創建結果隊列
@@ -108,7 +128,7 @@ def main():
 
     # 為每個GPU啟動一個進程
     processes = []
-    for gpu_id in range(args.num_gpus):
+    for gpu_id in range(num_gpus):
         if len(clips_per_gpu[gpu_id]) > 0:
             p = mp.Process(
                 target=worker_process,

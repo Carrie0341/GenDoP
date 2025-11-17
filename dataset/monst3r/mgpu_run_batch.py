@@ -3,6 +3,7 @@ import json
 import random
 import argparse
 import multiprocessing as mp
+import subprocess
 
 
 def process_clip_on_gpu(args_tuple):
@@ -19,19 +20,36 @@ def process_clip_on_gpu(args_tuple):
 
     os.makedirs(output_path, exist_ok=True)
 
-    # 設置CUDA_VISIBLE_DEVICES來指定GPU
+    # 創建新的環境變量，只暴露一個GPU
     env = os.environ.copy()
     env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 
-    cmd = f"CUDA_VISIBLE_DEVICES={gpu_id} python run_single.py --input_dir {clip_path} --output_dir {output_path} --range {start},{end}"
-    print(f"[GPU {gpu_id}] {cmd}")
+    # 使用 cuda:0 因為只暴露了一個GPU
+    cmd = [
+        'python', 'run_single.py',
+        '--input_dir', clip_path,
+        '--output_dir', output_path,
+        '--range', f'{start},{end}',
+        '--device', 'cuda:0'  # 重要：使用cuda:0
+    ]
 
-    result = os.system(cmd)
+    print(f"[GPU {gpu_id}] Processing {clip}")
 
-    if result == 0:
-        return f"Completed: {clip} on GPU {gpu_id}"
-    else:
-        return f"Failed: {clip} on GPU {gpu_id}"
+    try:
+        # 使用subprocess而不是os.system，可以更好地控制環境變量
+        result = subprocess.run(
+            cmd,
+            env=env,
+            capture_output=False,  # 改為True可以捕獲輸出
+            text=True
+        )
+
+        if result.returncode == 0:
+            return f"Completed: {clip} on GPU {gpu_id}"
+        else:
+            return f"Failed: {clip} on GPU {gpu_id} (exit code: {result.returncode})"
+    except Exception as e:
+        return f"Error: {clip} on GPU {gpu_id} - {str(e)}"
 
 
 def main():
@@ -97,6 +115,5 @@ def main():
 
 
 if __name__ == '__main__':
-    # 設置multiprocessing的啟動方法
     mp.set_start_method('spawn', force=True)
     main()

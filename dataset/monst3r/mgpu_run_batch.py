@@ -8,17 +8,15 @@ import torch
 import time
 
 
-def process_clip_on_gpu(args_tuple):
+def process_clip_on_gpu(clip, gpu_id, input_dir, output_dir, start, end):
     """在指定GPU上處理單個clip"""
-    clip, gpu_id, input_dir, output_dir, start, end = args_tuple
-
     clip_path = os.path.join(input_dir, clip)
     output_path = os.path.join(output_dir, clip)
     check_path = os.path.join(output_path, "NULL")
 
     if os.path.exists(check_path):
         print(f"[GPU {gpu_id}] Skip {check_path}")
-        return f"Skipped: {clip}"
+        return f"Skipped: {clip}", "skipped"
 
     os.makedirs(output_path, exist_ok=True)
 
@@ -53,30 +51,32 @@ def process_clip_on_gpu(args_tuple):
 
         if result.returncode == 0:
             print(f"[GPU {gpu_id}] ✓ Completed {clip} in {elapsed:.1f}s")
-            return f"Completed: {clip} on GPU {gpu_id}"
+            return f"Completed: {clip} on GPU {gpu_id}", "completed"
         else:
             print(f"[GPU {gpu_id}] ✗ Failed {clip}")
             if result.stderr:
                 print(f"Error: {result.stderr[:200]}")
-            return f"Failed: {clip} on GPU {gpu_id} (exit code: {result.returncode})"
+            return f"Failed: {clip} on GPU {gpu_id} (exit code: {result.returncode})", "failed"
     except Exception as e:
         print(f"[GPU {gpu_id}] ✗ Error {clip}: {str(e)}")
-        return f"Error: {clip} on GPU {gpu_id} - {str(e)}"
+        return f"Error: {clip} on GPU {gpu_id} - {str(e)}", "failed"
 
 
-def worker_process(gpu_id, clips, input_dir, output_dir, start, end, result_queue):
-    """每個GPU一個工作進程，順序處理分配給它的clips"""
-    print(f"[GPU {gpu_id}] Worker started with {len(clips)} clips")
-    results = []
+def worker_process(gpu_id, task_queue, result_queue, input_dir, output_dir, start, end):
+    """每個GPU一個工作進程，從佇列中動態獲取任務"""
+    print(f"[GPU {gpu_id}] Worker started")
+    while True:
+        try:
+            # 從佇列中獲取任務，如果佇列為空則立即引發 Empty 異常
+            clip = task_queue.get_nowait()
+        except mp.queues.Empty:
+            # 佇列已空，工作進程結束
+            print(f"[GPU {gpu_id}] Worker finished, no more tasks.")
+            break
 
-    for i, clip in enumerate(clips, 1):
-        print(f"\n[GPU {gpu_id}] === Progress: {i}/{len(clips)} ===")
-        result = process_clip_on_gpu((clip, gpu_id, input_dir, output_dir, start, end))
-        results.append(result)
+        result, status = process_clip_on_gpu(clip, gpu_id, input_dir, output_dir, start, end)
         result_queue.put(result)
-
-    print(f"[GPU {gpu_id}] Worker finished")
-    return results
+        task_queue.task_done()  # 通知佇列一個任務已完成
 
 
 def main():
@@ -135,38 +135,36 @@ def main():
 
     print(f"Total clips to process: {len(clip_list)}")
 
-    # 將clips分配給各個GPU
-    clips_per_gpu = [[] for _ in range(max_workers)]
-    for i, clip in enumerate(clip_list):
-        gpu_id = i % max_workers
-        clips_per_gpu[gpu_id].append(clip)
-
-    # 打印分配情況
-    print("\nWork distribution:")
-    for gpu_id in range(max_workers):
-        print(f"  GPU {gpu_id}: {len(clips_per_gpu[gpu_id])} clips")
-
-    # 創建結果隊列
+    # 創建任務佇列和結果佇列
+    task_queue = mp.JoinableQueue()
     result_queue = mp.Queue()
+
+    # 將所有任務放入佇列
+    for clip in clip_list:
+        task_queue.put(clip)
 
     # 為每個GPU啟動一個進程
     processes = []
     start_time = time.time()
 
+    print(f"\nStarting {max_workers} worker processes...")
     for gpu_id in range(max_workers):
-        if len(clips_per_gpu[gpu_id]) > 0:
-            p = mp.Process(
-                target=worker_process,
-                args=(gpu_id, clips_per_gpu[gpu_id], input_dir, output_dir,
-                      start, end if end else len(clip_list), result_queue)
-            )
-            p.start()
-            processes.append(p)
-            print(f"✓ Started worker for GPU {gpu_id}")
+        p = mp.Process(
+            target=worker_process,
+            args=(gpu_id, task_queue, result_queue, input_dir, output_dir,
+                  start, end if end else len(clip_list))
+        )
+        p.start()
+        processes.append(p)
+        print(f"✓ Started worker for GPU {gpu_id}")
 
     print(f"\n{'='*60}")
     print("All workers started. Processing...")
     print(f"{'='*60}\n")
+
+    # 等待所有任務完成
+    task_queue.join()
+    print("\nAll tasks have been processed.")
 
     # 等待所有進程完成
     for p in processes:
@@ -183,9 +181,9 @@ def main():
     print("\n" + "="*60)
     print("PROCESSING SUMMARY")
     print("="*60)
-    completed = sum(1 for r in results if r.startswith("Completed"))
-    skipped = sum(1 for r in results if r.startswith("Skipped"))
-    failed = sum(1 for r in results if r.startswith("Failed"))
+    completed = len([r for r in results if r.startswith("Completed")])
+    skipped = len([r for r in results if r.startswith("Skipped")])
+    failed = len([r for r in results if r.startswith("Failed")])
 
     print(f"Completed: {completed}")
     print(f"Skipped:   {skipped}")

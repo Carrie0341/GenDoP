@@ -28,10 +28,10 @@ def launch_captioning(config: DictConfig):
     print(config)
     data_dir = Path(config.data_dir)
     output_dir = Path(config.output_dir)
-    
+
     pattern = "*/*_transforms_cleaning.json"
     traj_paths = glob.glob(os.path.join(data_dir, pattern))
-    
+
     # Get all trajectory paths
     traj_paths = sorted(traj_paths, reverse=config.reverse)
     print("Number of trajectories: ", len(traj_paths))
@@ -48,7 +48,7 @@ def launch_captioning(config: DictConfig):
             traj = torch.tensor(traj)
 
             traj_name = traj_path.split("/")[-2] + '/' + traj_path.split("/")[-1].replace("_transforms_cleaning.json", "")
-            
+
             print("\n------------------------------------------------")
             vis_path = traj_path.replace("_transforms_cleaning.json", "_traj_cleaning.png")
             cam_segment_path = output_dir / "cam_segments" / (traj_name + "_tag.json")
@@ -77,7 +77,7 @@ def launch_captioning(config: DictConfig):
                 min_chunk_size=config.min_chunk_size,
                 smoothing_window_size=config.smoothing_window_size,
             )
-            
+
             def default_serializer(obj):
                 if isinstance(obj, np.int64):
                     return int(obj)

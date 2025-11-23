@@ -46,7 +46,7 @@ def process_single_trajectory(traj_path, config, output_dir):
         # 2. 檢查輸出是否存在 (Double check，防止 race condition)
         if os.path.exists(caption_path) and not config.overwrite:
             return  # Skip
-
+        print(f"[{os.getpid()}] Processing: {traj_name}")
         # 建立父目錄
         cam_segment_path.parent.mkdir(parents=True, exist_ok=True)
 

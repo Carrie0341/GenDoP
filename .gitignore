@@ -1,5 +1,6 @@
 __pycache__
 .vscode
+api_config.py
 workspace*
 tmp_*
 *.ipynb

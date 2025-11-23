@@ -17,17 +17,21 @@ MAX_TRIALS = 3
 
 # ------------------------------------------------------------------------------------- #
 
-api_key = "YOUR_OPENAI_API_KEY"  # Replace with your OpenAI API key
+try:
+    from api_config import api_key
+except ImportError:
+    raise ImportError("Could not import 'config.py'. Please create it in the root directory with OPENAI_API_KEY defined.")
 
 client = OpenAI(api_key=api_key)
 
+
 def call_gpt4_v(user_prompt, modelname, max_tokens=700):
     conversation_history = [({"role": "user",
-                                 "content": [
-                                     {"type": "text", "text": user_prompt},
-                                 ]
-                                 }
-                                )]
+                              "content": [
+                                  {"type": "text", "text": user_prompt},
+                              ]
+                              }
+                             )]
     response = client.chat.completions.create(
         model=modelname,
         messages=conversation_history,
@@ -43,7 +47,8 @@ def show_content(response):
 #     with open(file, 'w') as f:
 #         f.write(response.choices[0].message.content)
 
-def single_test(prompt_text, modelname):            
+
+def single_test(prompt_text, modelname):
     for k in range(MAX_TRIALS):
         try:
             response = call_gpt4_v(prompt_text, modelname)
@@ -55,17 +60,19 @@ def single_test(prompt_text, modelname):
             print(f"Frame Error: {e}\n")
             sleep(1)
             continue
-    return response.choices[0].message.content 
+    return response.choices[0].message.content
+
 
 def get_full_description(
     segment_index: int, start: int, end: int, index_to_move: Dict[int, str], index_to_angular: Dict[int, str]
 ) -> str:
     cam_index = segment_index//7
-    ang_index = segment_index%7
+    ang_index = segment_index % 7
     if index_to_angular[ang_index] == "static":
         return f"Between frames {start} and {end}: {index_to_move[cam_index]}"
     else:
         return f"Between frames {start} and {end}: {index_to_move[cam_index]} + {index_to_angular[ang_index]}"
+
 
 def get_caption_prompt(
     traj_description: str,
@@ -81,11 +88,14 @@ def get_caption_prompt(
     return raw_prompt
 
 # ------------------------------------------------------------------------------------- #
+
+
 def has_consecutive_nonzero_same_numbers(angular_list):
     for i in range(1, len(angular_list)):
         if angular_list[i] == angular_list[i - 1] and angular_list[i] != 0:
             return True
     return False
+
 
 def caption_trajectories(
     cam_segments: List[int],
@@ -96,13 +106,13 @@ def caption_trajectories(
 ) -> str:
     # # Find consecutive chunks of patterns
     cam_chunks = find_consecutive_chunks(cam_segments)
-    
+
     # Describe each chunk and join them
     cam_description = []
     angular_list = []
     for index, start, end in cam_chunks:
         description = get_full_description(index, start, end, CAM_INDEX_TO_PATTERN, ANG_INDEX_TO_PATTERN)
-        angular_list.append(index%7)
+        angular_list.append(index % 7)
         cam_description.append(description)
 
     traj_description = (
@@ -111,7 +121,7 @@ def caption_trajectories(
         + "; ".join(cam_description)
         + ". "
     )
-    
+
     # # Prompt the chatbot with the trajectory description
     caption_prompt = get_caption_prompt(
         traj_description,
@@ -120,7 +130,7 @@ def caption_trajectories(
         constraint_prompt,
         demonstration_prompt,
     )
-    
+
     if has_consecutive_nonzero_same_numbers(angular_list):
         print("Consecutive same numbers")
         caption = single_test(caption_prompt, "gpt-4o")

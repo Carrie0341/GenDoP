@@ -134,7 +134,7 @@ def launch_captioning(config: DictConfig):
 
     # 4. 設定並行 Worker 數量
     # 如果 config 裡有 num_workers 就用，沒有就預設 CPU 核心數 - 24 (保留資源)
-    num_workers = 100
+    num_workers = 200
     # 注意：因為這裡會呼叫 OpenAI API，如果設太大 (如 >10)，可能會觸發 429 Rate Limit
     # 建議設在 4 ~ 8 之間
     if num_workers > 8:

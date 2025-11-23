@@ -449,7 +449,7 @@ def get_captions():
     invalid_count = 0
     dataset_dir = f"{root}/Tagging/cam_segments"
     DATA_dir = f'{root}/Dataset'
-    for folder in os.listdir(dataset_dir):
+    for folder in tqdm.tqdm(sorted(os.listdir(dataset_dir))):
         folder_path = os.path.join(dataset_dir, folder)
         files = os.listdir(folder_path)
         txts = [os.path.join(folder, f) for f in files if f.lower().endswith('_caption.txt')]
@@ -480,6 +480,8 @@ def get_captions():
 
 def check_DataDoP():
     # Copy files to DataDoP
+    print("Start Checking DataDoP...")
+
     DATA_dir = f'{root}/Dataset'
     DataDoP_dir = f'../DataDoP/DataDoP'
     os.makedirs(DataDoP_dir, exist_ok=True)

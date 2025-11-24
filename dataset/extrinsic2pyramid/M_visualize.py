@@ -1,17 +1,22 @@
+from util.camera_pose_visualizer import CameraPoseVisualizer
+import tempfile  # 用於解決並行時的檔案名稱衝突
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from PIL import Image
+from scipy.spatial.transform import Rotation as R
+import numpy as np
+from torch import tensor
+import matplotlib.pyplot as plt
 import os
 import glob
 import tqdm
-
-import numpy as np
-import random
 import json
 import torch
-import matplotlib.pyplot as plt
-from torch import tensor
-from util.camera_pose_visualizer import CameraPoseVisualizer
-import numpy as np
-from scipy.spatial.transform import Rotation as R
-from PIL import Image
+import matplotlib
+# 設定 Matplotlib 後端為非互動模式，這對於多進程繪圖至關重要
+matplotlib.use('Agg')
+# 假設 util 存在於您的環境中
+
+# 新增並行處理需要的庫
 
 
 def quaternion_to_matrix(quaternions):
@@ -112,89 +117,126 @@ def convert_viser_poses_to_new_coordinate_system(quaternions, positions):
     return np.array(matrices)
 
 
-def draw_json(json_path, vis_name):
+def draw_json(json_path, vis_name_base):
+    """
+    修改後的 draw_json 函數
+    1. 接收 json_path
+    2. 使用 tempfile 避免多進程寫入同一個 'front_view.png' 導致衝突
+    """
     vis_path = json_path.replace("_transforms", "_traj").replace(".json", ".png")
-    print(vis_path)
+
+    # 讀取數據
+    try:
+        data = json.load(open(json_path))['frames']
+    except Exception as e:
+        print(f"Error reading {json_path}: {e}")
+        return
+
     poses = []
-    data = json.load(open(json_path))['frames']
     for frame in data:
         poses.append(frame['transform_matrix'])
 
     poses = [poses[i] for i in range(0, len(poses), 2)]
+
+    if not poses:
+        print(f"No poses found in {json_path}")
+        return
+
     c2ws = torch.tensor(poses)
 
     ref_w2c = torch.inverse(c2ws[:1])
     c2ws = ref_w2c.repeat(c2ws.shape[0], 1, 1) @ c2ws
 
     rangesize = torch.max(torch.abs(torch.tensor(c2ws[:, :3, 3]))) * 1.1
-
     c2ws = c2ws.numpy()
 
-    # Prepare visualizer
-    visualizer = CameraPoseVisualizer([-rangesize, rangesize], [-rangesize, rangesize], [-rangesize, rangesize])
-
     num_matrices = c2ws.shape[0]
-
     colors = plt.cm.rainbow(np.linspace(1, 0, num_matrices))
 
-    # Create three views
     views = [
         {'elev': 90, 'azim': -90, 'name': 'front'},
         {'elev': 180, 'azim': -90, 'name': 'top'},
         {'elev': 0, 'azim': 0, 'name': 'side'}
     ]
 
-    image_paths = []
+    # 使用 TemporaryDirectory 創建唯一的暫存目錄
+    # 這樣不同的進程不會互相覆蓋 front_view.png 等中間文件
+    with tempfile.TemporaryDirectory() as temp_dir:
+        image_paths = []
 
-    for view in views:
-        fig = plt.figure(figsize=(12, 12))
-        visualizer = CameraPoseVisualizer([-rangesize, rangesize], [-rangesize, rangesize], [-rangesize, rangesize])
+        for view in views:
+            fig = plt.figure(figsize=(12, 12))
+            visualizer = CameraPoseVisualizer([-rangesize, rangesize], [-rangesize, rangesize], [-rangesize, rangesize])
 
-        for i in range(num_matrices):
-            color = colors[i]
-            visualizer.extrinsic2pyramid(c2ws[i], color, rangesize / 4)
+            for i in range(num_matrices):
+                color = colors[i]
+                visualizer.extrinsic2pyramid(c2ws[i], color, rangesize / 4)
 
-        visualizer.ax.view_init(elev=view['elev'], azim=view['azim'])
+            visualizer.ax.view_init(elev=view['elev'], azim=view['azim'])
 
-        # Save each view as a separate image
-        image_path = f"{vis_name}/{view['name']}_view.png"
-        os.makedirs(vis_name, exist_ok=True)
-        visualizer.save(image_path)
-        image_paths.append(image_path)
+            # 將中間文件存入唯一的 temp_dir
+            image_path = os.path.join(temp_dir, f"{view['name']}_view.png")
+            visualizer.save(image_path)
+            image_paths.append(image_path)
 
-    # Now combine the three images horizontally
-    images = [Image.open(img_path) for img_path in image_paths]
-    images[-1] = images[-1].rotate(90, expand=True)
+            # 重要：關閉 figure 以釋放內存
+            plt.close(fig)
 
-    # Resize images to fit the desired final size
-    images = [img.crop((420, 420, 1980, 1980)) for img in images]
-    images_resized = [img.resize((341, 341)) for img in images]
+        # 讀取並處理圖片
+        images = [Image.open(img_path) for img_path in image_paths]
+        images[-1] = images[-1].rotate(90, expand=True)
 
-    # Concatenate images horizontally
-    combined_image = np.concatenate([np.array(img) for img in images_resized], axis=1)
+        images = [img.crop((420, 420, 1980, 1980)) for img in images]
+        images_resized = [img.resize((341, 341)) for img in images]
 
-    # Save the final combined image
-    final_image = Image.fromarray(combined_image)
-    final_image.save(vis_path)
+        combined_image = np.concatenate([np.array(img) for img in images_resized], axis=1)
 
-    print(f"Combined image saved at {vis_path}")
+        final_image = Image.fromarray(combined_image)
+        final_image.save(vis_path)
+
+    # print(f"Combined image saved at {vis_path}") # Optional: reduce spam
+
+
+def process_single_task(name, dataset_dir, visname):
+    """
+    這是提交給 ProcessPoolExecutor 的單一任務封裝函數
+    """
+    json_file = f"{dataset_dir}/{name}_transforms_cleaning.json"
+    vis_path = json_file.replace("_transforms", "_traj").replace(".json", ".png")
+
+    if os.path.exists(vis_path):
+        return  # Skip
+
+    draw_json(json_file, visname)
 
 
 if __name__ == "__main__":
     valid_name_list = []
-    invalid_name_list = []
-    visname = 'vis0'
+    visname = 'vis0'  # 此變數在並行版本中僅作為保留參數，實際中間檔會存於 temp
     dataset_dir = "./DATA/Dataset"
     dataset_list = "./DATA/DataDoP_valid.txt"
+
     with open(dataset_list, 'r') as f:
         lines = f.readlines()
         for line in lines:
             valid_name_list.append(line.strip())
+
     print("#valid_name_list:", len(valid_name_list))
-    for name in tqdm.tqdm(valid_name_list):
-        json_file = f"{dataset_dir}/{name}_transforms_cleaning.json"
-        vis_path = json_file.replace("_transforms", "_traj").replace(".json", ".png")
-        if os.path.exists(vis_path):
-            print(f"Skip {vis_path}")
-            continue
-        draw_json(json_file, visname)
+
+    # 準備任務列表
+    tasks = []
+    for name in valid_name_list:
+        tasks.append((name, dataset_dir, visname))
+
+    # 設定並行進程數 (預設使用所有可用 CPU 核心)
+    # 若要限制核心數，可設定 max_workers=4
+    max_workers = os.cpu_count()
+    print(f"Starting processing with {max_workers} CPUs...")
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # 提交任務
+        futures = [executor.submit(process_single_task, *task) for task in tasks]
+
+        # 使用 tqdm 顯示進度
+        for _ in tqdm.tqdm(as_completed(futures), total=len(futures)):
+            pass

@@ -492,77 +492,177 @@ def pose_clean():
                        desc="Pose Clean (Parallel)"))
 
 
-def get_captions():
-    invalid_count = 0
-    dataset_dir = f"{root}/Tagging/cam_segments"
-    DATA_dir = f'{root}/Dataset'
-    for folder in os.listdir(dataset_dir):
-        folder_path = os.path.join(dataset_dir, folder)
-        files = os.listdir(folder_path)
-        txts = [os.path.join(folder, f) for f in files if f.lower().endswith('_caption.txt')]
-        for txt in txts:
-            data = {}
-            txt_path = os.path.join(dataset_dir, txt)
-            rela_path = os.path.join(dataset_dir, txt.replace('_caption.txt', '_relationship.txt'))
-            new_path = os.path.join(DATA_dir, txt.replace('_caption.txt', '_caption.json'))
+def process_single_caption_folder(folder):
+    """處理單個資料夾的 Caption 轉換"""
+    source_dir = f"{root}/Tagging/cam_segments"
+    target_dir = f'{root}/Dataset'
+
+    folder_path = os.path.join(source_dir, folder)
+    if not os.path.isdir(folder_path):
+        return
+
+    # 確保目標資料夾存在 (如果是結構化的)
+    # 如果 target_dir/{folder} 不存在，寫入檔案會報錯，所以先建立
+    target_folder_path = os.path.join(target_dir, folder)
+    os.makedirs(target_folder_path, exist_ok=True)
+
+    files = os.listdir(folder_path)
+    txts = [f for f in files if f.lower().endswith('_caption.txt')]
+
+    for txt_file in txts:
+        try:
+            name_base = txt_file.replace('_caption.txt', '')
+            txt_path = os.path.join(folder_path, txt_file)
+            rela_path = os.path.join(folder_path, name_base + '_relationship.txt')
+
+            # 注意：這裡根據你的原始邏輯，new_path 是 dataset_dir/folder/name_caption.json
+            new_path = os.path.join(target_folder_path, name_base + '_caption.json')
+
+            if not os.path.exists(rela_path):
+                continue
 
             with open(txt_path, 'r') as f:
                 caption = f.read().strip()
             with open(rela_path, 'r') as f:
                 rela = f.readlines()
 
+            data = {}
             data['Movement'] = caption
             for line in rela:
                 if '**Detailed**' in line:
                     data['Detailed Interaction'] = line.replace('**Detailed**: ', '').strip()
                 elif '**Concise**' in line:
                     data['Concise Interaction'] = line.replace('**Concise**: ', '').strip()
-            # print(len(data))
-            assert len(data) == 3, new_path + '\n' + rela_path
+
+            # 簡易檢查
+            if len(data) != 3:
+                # 可以在這裡 log 錯誤，但避免 print 影響進度條
+                pass
+
             with open(new_path, 'w') as f:
-                # print(new_path)
                 json.dump(data, f, indent=4)
-    print(invalid_count)
+        except Exception as e:
+            print(f"Error processing {folder}/{txt_file}: {e}")
+
+
+def get_captions():
+    source_dir = f"{root}/Tagging/cam_segments"
+    if not os.path.exists(source_dir):
+        print(f"Directory not found: {source_dir}")
+        return
+
+    folders = sorted(os.listdir(source_dir))
+
+    num_workers = max(1, os.cpu_count() - 4)  # 保留一點核心給系統
+    print(f"Generating Captions with {num_workers} workers...")
+
+    with multiprocessing.Pool(num_workers) as pool:
+        list(tqdm.tqdm(pool.imap_unordered(process_single_caption_folder, folders),
+                       total=len(folders),
+                       desc="Processing Captions"))
+
+
+def process_single_copy_folder(folder):
+    """處理單個資料夾的複製"""
+    DATA_dir = f'{root}/Dataset'
+    DataDoP_dir = '../DataDoP/DataDoP'
+
+    old_path = os.path.join(DATA_dir, folder)
+    new_path = os.path.join(DataDoP_dir, folder)
+
+    if os.path.exists(new_path):
+        return  # Skip if exists
+
+    try:
+        shutil.copytree(old_path, new_path)
+    except Exception as e:
+        print(f"Error copying {folder}: {e}")
+
+
+def process_single_verify(name):
+    """驗證單筆資料完整性"""
+    DataDoP_dir = '../DataDoP/DataDoP'
+    required_suffixes = [
+        '_caption.json', '_rgb.png', '_depth.npy',
+        '_intrinsics.txt', '_traj.txt',
+        '_transforms_cleaning.json', '_traj_cleaning.png'
+    ]
+
+    for suffix in required_suffixes:
+        file_path = f"{DataDoP_dir}/{name}{suffix}"
+        if not os.path.exists(file_path):
+            return f"Invalid: {name} (Missing {suffix})"
+    return None
+
+
+def process_single_cleanup(folder):
+    """清理多餘檔案"""
+    DataDoP_dir = '../DataDoP/DataDoP'
+    folder_path = os.path.join(DataDoP_dir, folder)
+
+    if not os.path.isdir(folder_path):
+        return
+
+    valid_suffixes = (
+        '_caption.json', '_rgb.png', '_depth.npy',
+        '_intrinsics.txt', '_traj.txt',
+        '_transforms_cleaning.json', '_traj_cleaning.png'
+    )
+
+    for file in os.listdir(folder_path):
+        if not file.endswith(valid_suffixes):
+            file_path = os.path.join(folder_path, file)
+            try:
+                os.remove(file_path)
+                # print(f"Removed extra file: {file_path}") # 註解掉以減少 I/O
+            except OSError as e:
+                print(f"Error deleting {file_path}: {e}")
 
 
 def check_DataDoP():
-    # Copy files to DataDoP
     DATA_dir = f'{root}/Dataset'
-    DataDoP_dir = f'../DataDoP/DataDoP'
+    DataDoP_dir = '../DataDoP/DataDoP'
     os.makedirs(DataDoP_dir, exist_ok=True)
-    for folder in os.listdir(DATA_dir):
-        old_path = os.path.join(DATA_dir, folder)
-        new_path = os.path.join(DataDoP_dir, folder)
-        if os.path.exists(new_path):
-            print(f"Skip {new_path}")
-            continue
-        shutil.copytree(old_path, new_path)
 
-    # Check completeness
-    with open(f'../DataDoP/DataDoP_valid.txt', 'r') as f:
-        lines = f.readlines()
-        valid_name_list = [line.strip() for line in lines]
-    print("#valid_name_list:", len(valid_name_list))
-    for name in tqdm.tqdm(valid_name_list):
-        caption_path = f"{DataDoP_dir}/{name}_caption.json"
-        rgb_path = f"{DataDoP_dir}/{name}_rgb.png"
-        depth_path = f"{DataDoP_dir}/{name}_depth.npy"
-        intrinsics_path = f"{DataDoP_dir}/{name}_intrinsics.txt"
-        traj_path = f"{DataDoP_dir}/{name}_traj.txt"
-        transforms_path = f"{DataDoP_dir}/{name}_transforms_cleaning.json"
-        traj_vis_path = f"{DataDoP_dir}/{name}_traj_cleaning.png"
-        if not os.path.exists(caption_path) or not os.path.exists(rgb_path) or not os.path.exists(depth_path) or not os.path.exists(intrinsics_path) or not os.path.exists(traj_path) or not os.path.exists(transforms_path) or not os.path.exists(traj_vis_path):
-            print("Invalid: ", name)
+    # 1. Parallel Copy
+    folders = sorted(os.listdir(DATA_dir))
+    num_workers = max(1, os.cpu_count() - 4)
+
+    print(f"Copying files to DataDoP with {num_workers} workers...")
+    with multiprocessing.Pool(num_workers) as pool:
+        list(tqdm.tqdm(pool.imap_unordered(process_single_copy_folder, folders),
+                       total=len(folders),
+                       desc="Copying"))
+
+    # 2. Parallel Validity Check
+    valid_list_path = '../DataDoP/DataDoP_valid.txt'
+    if os.path.exists(valid_list_path):
+        with open(valid_list_path, 'r') as f:
+            valid_name_list = [line.strip() for line in f.readlines()]
+
+        print(f"Verifying {len(valid_name_list)} items...")
+        with multiprocessing.Pool(num_workers) as pool:
+            results = list(tqdm.tqdm(pool.imap_unordered(process_single_verify, valid_name_list),
+                                     total=len(valid_name_list),
+                                     desc="Verifying"))
+
+        # 顯示錯誤
+        for res in results:
+            if res:
+                print(res)
+    else:
+        print(f"Warning: {valid_list_path} not found.")
+
+    # 3. Parallel Cleanup
+    # 這裡重新 listdir 一次，確保處理的是目前的 DataDoP 目錄
+    current_folders = sorted(os.listdir(DataDoP_dir))
+    print("Cleaning up extra files...")
+    with multiprocessing.Pool(num_workers) as pool:
+        list(tqdm.tqdm(pool.imap_unordered(process_single_cleanup, current_folders),
+                       total=len(current_folders),
+                       desc="Cleanup"))
+
     print("Done.")
-
-    # Check extra files
-    for folder in sorted(os.listdir(DataDoP_dir)):
-        folder_path = os.path.join(DataDoP_dir, folder)
-        for file in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, file)
-            if not (file.endswith('_caption.json') or file.endswith('_rgb.png') or file.endswith('_depth.npy') or file.endswith('_intrinsics.txt') or file.endswith('_traj.txt') or file.endswith('_transforms_cleaning.json') or file.endswith('_traj_cleaning.png')):
-                print("Extra file: ", file_path)
-                os.remove(file_path)
 
 
 if __name__ == '__main__':

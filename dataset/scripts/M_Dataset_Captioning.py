@@ -116,7 +116,7 @@ if __name__ == "__main__":
 
     # 2. 設定並行數量 (Max Workers)
     # 建議從 5 開始測試，避免觸發 OpenAI Rate Limit 429 Error
-    MAX_WORKERS = 200
+    MAX_WORKERS = 40
 
     # 3. 使用 ThreadPoolExecutor 進行並行處理
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:

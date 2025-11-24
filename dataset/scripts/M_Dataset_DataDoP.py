@@ -553,7 +553,7 @@ def get_captions():
 
     folders = sorted(os.listdir(source_dir))
 
-    num_workers = max(1, os.cpu_count() - 4)  # 保留一點核心給系統
+    num_workers = max(1, os.cpu_count() - 14)  # 保留一點核心給系統
     print(f"Generating Captions with {num_workers} workers...")
 
     with multiprocessing.Pool(num_workers) as pool:

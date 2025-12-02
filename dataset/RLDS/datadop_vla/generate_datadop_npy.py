@@ -139,8 +139,7 @@ def find_valid_samples(data_root, test_samples=None):
                         'caption_data': caption_data
                     })
 
-                    if pbar:
-                        pbar.update(1)
+                    pbar.update(1)
 
                     if scan_limit and len(valid_samples) >= scan_limit:
                         if pbar.total is not None and pbar.n < pbar.total:

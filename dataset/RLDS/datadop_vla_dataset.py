@@ -10,10 +10,10 @@ Date: 2025-12-03
 
 Usage:
     # Build test dataset
-    tfds build --config=datadop_vla_test --data_dir=./DATA/TFDS --manual_dir=./DATA/datadop-npy-test/splits
+    tfds build --config=datadop_vla_test --data_dir=../DATA/TFDS --manual_dir=../DATA/RLDS/datadop-npy-test/splits
     
     # Build full dataset
-    tfds build --config=datadop_vla --data_dir=./DATA/TFDS --manual_dir=./DATA/datadop-npy/splits
+    tfds build --config=datadop_vla --data_dir=../DATA/TFDS --manual_dir=../DATA/RLDS/datadop-npy/splits
 """
 
 import os
@@ -116,11 +116,11 @@ class DataDoPVLA(tfds.core.GeneratorBasedBuilder):
     def _split_generators(self, dl_manager: tfds.download.DownloadManager):
         """Define dataset train/val/test splits."""
         data_dir = dl_manager.manual_dir
-        
+
         splits = {}
         config = self.builder_config.name
         print(f"!!data_dir: {data_dir}")
-        
+
         if config == 'datadop_vla':
             # Full dataset with train/val/test
             if os.path.isdir(os.path.join(data_dir, 'train')):
@@ -143,10 +143,10 @@ class DataDoPVLA(tfds.core.GeneratorBasedBuilder):
     def _generate_examples(self, path: str) -> Iterator[Tuple[str, Any]]:
         """Generate examples for each split."""
         episode_paths = glob.glob(os.path.join(path, '*.npy'))
-        
+
         for episode_path in episode_paths:
             unique_key = os.path.basename(episode_path)
-            
+
             try:
                 episode_data = np.load(episode_path, allow_pickle=True)
                 if len(episode_data) == 0:
@@ -156,13 +156,13 @@ class DataDoPVLA(tfds.core.GeneratorBasedBuilder):
                 continue
 
             episode_steps = []
-            
+
             # Extract caption data from first step
             caption_data = episode_data[0].get('caption_data', {})
             movement_caption = caption_data.get('Movement', '')
             detailed_caption = caption_data.get('Detailed Interaction', '')
             concise_caption = caption_data.get('Concise Interaction', '')
-            
+
             for i, step in enumerate(episode_data):
                 episode_steps.append({
                     'observation': {

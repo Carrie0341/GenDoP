@@ -11,10 +11,10 @@ Date: 2025-12-03
 
 Usage:
     # Full conversion with train/val/test splits (80/10/10)
-    python generate_datadop_npy.py --data_root ../DATA --output_dir ../DATA/RLDS/datadop-npy/splits --val_split 0.1 --test_split 0.1 --seed 42
+    python generate_datadop_npy.py --data_root ../../DATA --output_dir ../../DATA/RLDS/datadop-npy/splits --val_split 0.1 --test_split 0.1 --seed 42
     
     # Test mode with 20 random samples
-    python generate_datadop_npy.py --data_root ../DATA --output_dir ../DATA/RLDS/datadop-npy-test/splits --test_samples 20 --seed 42
+    python generate_datadop_npy.py --data_root ../../DATA --output_dir ../../DATA/RLDS/datadop-npy-test/splits --test_samples 20 --seed 42
 """
 
 from scipy.spatial.transform import Rotation

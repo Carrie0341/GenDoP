@@ -12,7 +12,7 @@
 1. 確認已安裝必要的函式庫: matplotlib, scipy, numpy, opencv-python
    pip install matplotlib scipy numpy opencv-python
 2. 在終端機中執行，指向一個包含 .npy 檔案的目錄：
-   python visualize_datadop_npy.py --npy_dir ../DATA/RLDS/datadop-npy-test/splits/train --output_dir ./visualizations
+   python visualize_datadop_npy.py --npy_dir ../DATA/RLDS/datadop-npy/splits/train --output_dir ./visualizations --max_files 3
 """
 import argparse
 from pathlib import Path
@@ -166,7 +166,8 @@ def visualize_episode(npy_path, output_dir):
     plt.close()
 
     # === 3. 生成每個時間步的詳細圖片（前10幀） ===
-    num_detailed = min(10, len(images))
+    # num_detailed = min(10, len(images))
+    num_detailed = len(images)
     for i in range(num_detailed):
         fig = plt.figure(figsize=(14, 6))
         
@@ -226,6 +227,23 @@ def visualize_episode(npy_path, output_dir):
     print(f"    - trajectory_3d.png (3D 軌跡總覽)")
     print(f"    - keyframes_grid.png (關鍵幀網格)")
     print(f"    - frame_XXX.png (前 {num_detailed} 幀的詳細圖)")
+
+    # === 4. 生成 GIF 動畫 ===
+    try:
+        import imageio
+        gif_path = episode_output_dir / 'vis_anim.gif'
+        
+        # 使用 imageio 製作 GIF
+        with imageio.get_writer(gif_path, mode='I', fps=5) as writer:
+            for i in range(num_detailed):
+                filename = episode_output_dir / f'frame_{i:03d}.png'
+                if filename.exists():
+                    image = imageio.imread(filename)
+                    writer.append_data(image)
+        print(f"    - vis_anim.gif (GIF 動畫)")
+    except ImportError:
+        print("    ! 缺少 imageio 套件，無法生成 GIF。請執行 `pip install imageio`")
+
 
 
 def main(args):

@@ -3,19 +3,23 @@
 視覺化驗證 DataDoP .npy 格式的 episode 資料（無 GUI 版本）。
 
 這個腳本會讀取一個目錄中所有的 .npy 檔案，並為每一個檔案
-生成多張圖片來檢視影像序列和 3D 相機軌跡。
+生成高品質 GIF 動畫和 3D 軌跡圖。
 
 作者：Gemini (Adapted for DataDoP - Headless Version)
 日期：2025-12-03
 
 使用方法：
-1. 確認已安裝必要的函式庫: matplotlib, scipy, numpy, opencv-python
-   pip install matplotlib scipy numpy opencv-python
-2. 在終端機中執行，指向一個包含 .npy 檔案的目錄：
+1. 確認已安裝必要的函式庫: matplotlib, scipy, numpy, imageio
+   pip install matplotlib scipy numpy imageio
+2. 在終端機中執行：
+   # 隨機採樣 5 個檔案視覺化
+   python visualize_datadop_npy.py --npy_dir ../DATA/RLDS/datadop-npy/splits/train --output_dir ./visualizations --random_sample 5
+   # 處理前 3 個檔案
    python visualize_datadop_npy.py --npy_dir ../DATA/RLDS/datadop-npy/splits/train --output_dir ./visualizations --max_files 3
 """
 import argparse
 from pathlib import Path
+import random
 
 import numpy as np
 import matplotlib
@@ -165,82 +169,85 @@ def visualize_episode(npy_path, output_dir):
     plt.savefig(episode_output_dir / 'keyframes_grid.png', dpi=150, bbox_inches='tight')
     plt.close()
 
-    # === 3. 生成每個時間步的詳細圖片（前10幀） ===
-    # num_detailed = min(10, len(images))
-    num_detailed = len(images)
-    for i in range(num_detailed):
-        fig = plt.figure(figsize=(14, 6))
-        
-        # 左側：影像
-        ax_img = fig.add_subplot(1, 2, 1)
-        ax_img.imshow(images[i])
-        ax_img.set_title(f'Frame {i}/{len(images)-1}')
-        ax_img.axis('off')
-        
-        # 右側：3D 軌跡（標記當前位置）
-        ax_traj = fig.add_subplot(1, 2, 2, projection='3d')
-        ax_traj.plot(positions[:, 0], positions[:, 1], positions[:, 2], 'b-', alpha=0.3, linewidth=1)
-        ax_traj.plot(positions[:i+1, 0], positions[:i+1, 1], positions[:i+1, 2], 'b-', linewidth=2, label='Traveled')
-        ax_traj.scatter(positions[i, 0], positions[i, 1], positions[i, 2], c='r', s=100, marker='o', label='Current')
-        
-        # 繪製相機方向
-        state = full_states[i]
-        pos, quat = state[:3], state[3:7]
-        rot_matrix = Rotation.from_quat(quat).as_matrix()
-        
-        origin = pos
-        x_axis, y_axis, z_axis = rot_matrix[:, 0], rot_matrix[:, 1], rot_matrix[:, 2]
-        arrow_length = max_range * 0.1
-        
-        ax_traj.quiver(origin[0], origin[1], origin[2], x_axis[0], x_axis[1], x_axis[2], 
-                      color='r', length=arrow_length, normalize=True, label='X')
-        ax_traj.quiver(origin[0], origin[1], origin[2], y_axis[0], y_axis[1], y_axis[2], 
-                      color='g', length=arrow_length, normalize=True, label='Y')
-        ax_traj.quiver(origin[0], origin[1], origin[2], z_axis[0], z_axis[1], z_axis[2], 
-                      color='b', length=arrow_length, normalize=True, label='Z')
-        
-        ax_traj.set_xlabel('X')
-        ax_traj.set_ylabel('Y')
-        ax_traj.set_zlabel('Z')
-        ax_traj.set_xlim(mid_x - max_range, mid_x + max_range)
-        ax_traj.set_ylim(mid_y - max_range, mid_y + max_range)
-        ax_traj.set_zlim(mid_z - max_range, mid_z + max_range)
-        ax_traj.view_init(elev=20., azim=-60)
-        ax_traj.legend(fontsize=8)
-        
-        # 添加 action 資訊
-        action_vals = actions[i]
-        action_text = (
-            f"Action @ t={i}:\n"
-            f"Translation: dx={action_vals[0]:.3f}, dy={action_vals[1]:.3f}, dz={action_vals[2]:.3f}\n"
-            f"Rotation: dR={np.rad2deg(action_vals[3]):.2f}°, dP={np.rad2deg(action_vals[4]):.2f}°, dY={np.rad2deg(action_vals[5]):.2f}°\n"
-            f"Gripper: {action_vals[6]:.3f}"
-        )
-        fig.text(0.5, 0.02, action_text, ha='center', va='bottom', fontsize=9, 
-                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
-        
-        plt.tight_layout()
-        plt.savefig(episode_output_dir / f'frame_{i:03d}.png', dpi=100, bbox_inches='tight')
-        plt.close()
-
-    print(f"  ✓ 已保存視覺化圖片到: {episode_output_dir}")
-    print(f"    - trajectory_3d.png (3D 軌跡總覽)")
-    print(f"    - keyframes_grid.png (關鍵幀網格)")
-    print(f"    - frame_XXX.png (前 {num_detailed} 幀的詳細圖)")
-
-    # === 4. 生成 GIF 動畫 ===
+    # === 3. 生成高品質 GIF 動畫 ===
     try:
         import imageio
-        gif_path = episode_output_dir / 'vis_anim.gif'
+        from io import BytesIO
         
-        # 使用 imageio 製作 GIF
-        with imageio.get_writer(gif_path, mode='I', fps=5) as writer:
-            for i in range(num_detailed):
-                filename = episode_output_dir / f'frame_{i:03d}.png'
-                if filename.exists():
-                    image = imageio.imread(filename)
-                    writer.append_data(image)
-        print(f"    - vis_anim.gif (GIF 動畫)")
+        gif_path = episode_output_dir / 'animation.gif'
+        
+        # 生成所有幀的圖片（不保存到磁碟，直接存入記憶體）
+        frames_for_gif = []
+        
+        for i in range(len(images)):
+            fig = plt.figure(figsize=(16, 8))
+            
+            # 左側：影像
+            ax_img = fig.add_subplot(1, 2, 1)
+            ax_img.imshow(images[i])
+            ax_img.set_title(f'Frame {i}/{len(images)-1}', fontsize=14, fontweight='bold')
+            ax_img.axis('off')
+            
+            # 右側：3D 軌跡（標記當前位置）
+            ax_traj = fig.add_subplot(1, 2, 2, projection='3d')
+            ax_traj.plot(positions[:, 0], positions[:, 1], positions[:, 2], 'b-', alpha=0.3, linewidth=1)
+            ax_traj.plot(positions[:i+1, 0], positions[:i+1, 1], positions[:i+1, 2], 'b-', linewidth=2, label='Traveled')
+            ax_traj.scatter(positions[i, 0], positions[i, 1], positions[i, 2], c='r', s=100, marker='o', label='Current')
+            
+            # 繪製相機方向
+            state = full_states[i]
+            pos, quat = state[:3], state[3:7]
+            rot_matrix = Rotation.from_quat(quat).as_matrix()
+            
+            origin = pos
+            x_axis, y_axis, z_axis = rot_matrix[:, 0], rot_matrix[:, 1], rot_matrix[:, 2]
+            arrow_length = max_range * 0.1
+            
+            ax_traj.quiver(origin[0], origin[1], origin[2], x_axis[0], x_axis[1], x_axis[2], 
+                          color='r', length=arrow_length, normalize=True, label='X')
+            ax_traj.quiver(origin[0], origin[1], origin[2], y_axis[0], y_axis[1], y_axis[2], 
+                          color='g', length=arrow_length, normalize=True, label='Y')
+            ax_traj.quiver(origin[0], origin[1], origin[2], z_axis[0], z_axis[1], z_axis[2], 
+                          color='b', length=arrow_length, normalize=True, label='Z')
+            
+            ax_traj.set_xlabel('X', fontsize=10)
+            ax_traj.set_ylabel('Y', fontsize=10)
+            ax_traj.set_zlabel('Z', fontsize=10)
+            ax_traj.set_xlim(mid_x - max_range, mid_x + max_range)
+            ax_traj.set_ylim(mid_y - max_range, mid_y + max_range)
+            ax_traj.set_zlim(mid_z - max_range, mid_z + max_range)
+            ax_traj.view_init(elev=20., azim=-60)
+            ax_traj.legend(fontsize=8)
+            
+            # 添加 action 資訊
+            action_vals = actions[i]
+            action_text = (
+                f"Action @ t={i}:\n"
+                f"Translation: dx={action_vals[0]:.3f}, dy={action_vals[1]:.3f}, dz={action_vals[2]:.3f}\n"
+                f"Rotation: dR={np.rad2deg(action_vals[3]):.2f}°, dP={np.rad2deg(action_vals[4]):.2f}°, dY={np.rad2deg(action_vals[5]):.2f}°\n"
+                f"Gripper: {action_vals[6]:.3f}"
+            )
+            fig.text(0.5, 0.02, action_text, ha='center', va='bottom', fontsize=10, 
+                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+            
+            plt.tight_layout()
+            
+            # 將圖片保存到記憶體緩衝區
+            buf = BytesIO()
+            plt.savefig(buf, format='png', dpi=120, bbox_inches='tight')
+            buf.seek(0)
+            frames_for_gif.append(imageio.imread(buf))
+            buf.close()
+            plt.close()
+        
+        # 生成高品質 GIF（調整 fps 和品質）
+        imageio.mimsave(gif_path, frames_for_gif, fps=10, loop=0)
+        
+        print(f"  ✓ 已保存視覺化到: {episode_output_dir}")
+        print(f"    - trajectory_3d.png (3D 軌跡總覽)")
+        print(f"    - keyframes_grid.png (關鍵幀網格)")
+        print(f"    - animation.gif (高品質 GIF 動畫, {len(frames_for_gif)} 幀, 10 fps)")
+        
     except ImportError:
         print("    ! 缺少 imageio 套件，無法生成 GIF。請執行 `pip install imageio`")
 
@@ -260,12 +267,20 @@ def main(args):
         print(f"錯誤：在目錄 {npy_dir} 中找不到任何 .npy 檔案。")
         return
 
-    # 限制處理的檔案數量
-    if args.max_files:
+    # 隨機採樣或限制處理的檔案數量
+    if args.random_sample:
+        if args.random_sample < len(npy_files):
+            random.seed(args.seed)
+            npy_files = random.sample(npy_files, args.random_sample)
+            print(f"隨機採樣 {args.random_sample} 個檔案（seed={args.seed}）")
+        else:
+            print(f"要求採樣 {args.random_sample} 個檔案，但只有 {len(npy_files)} 個，將處理全部")
+    elif args.max_files:
         npy_files = npy_files[:args.max_files]
+        print(f"處理前 {args.max_files} 個檔案")
 
     print(f"在目錄 {npy_dir} 中找到 {len(npy_files)} 個 episode 檔案。")
-    print(f"將保存視覺化圖片到: {output_dir}")
+    print(f"將保存視覺化到: {output_dir}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -277,10 +292,12 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="視覺化 DataDoP .npy episode 檔案並保存為圖片。")
+    parser = argparse.ArgumentParser(description="視覺化 DataDoP .npy episode 檔案並生成高品質 GIF。")
     parser.add_argument('--npy_dir', type=str, required=True, help='包含 .npy 檔案的目錄路徑。')
     parser.add_argument('--output_dir', type=str, default='./visualizations', help='輸出圖片的目錄路徑。')
-    parser.add_argument('--max_files', type=int, help='最多處理的檔案數量（用於測試）。')
+    parser.add_argument('--max_files', type=int, help='最多處理的檔案數量（按順序選擇）。')
+    parser.add_argument('--random_sample', type=int, help='隨機採樣的檔案數量。')
+    parser.add_argument('--seed', type=int, default=42, help='隨機採樣的種子（預設: 42）。')
     
     args = parser.parse_args()
     main(args)

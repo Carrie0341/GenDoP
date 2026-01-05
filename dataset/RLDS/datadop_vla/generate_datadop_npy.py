@@ -74,11 +74,11 @@ def find_valid_samples(data_root, test_samples=None):
     """
     print(">>> Step 1/3: Scanning for valid DataDoP samples...")
 
-    monst3r_dir = data_root / 'Monst3r'
+    images_dir = data_root / 'Images'
     dataset_dir = data_root / 'Dataset'
 
-    if not monst3r_dir.exists():
-        print(f"Error: Monst3r directory not found at {monst3r_dir}")
+    if not images_dir.exists():
+        print(f"Error: Images directory not found at {images_dir}")
         return []
 
     if not dataset_dir.exists():
@@ -88,8 +88,8 @@ def find_valid_samples(data_root, test_samples=None):
     valid_samples = []
     scan_limit = test_samples * 20 if test_samples else None
 
-    # Get all video directories in Monst3r
-    video_dirs = sorted([d for d in monst3r_dir.iterdir() if d.is_dir()])
+    # Get all video directories in Images
+    video_dirs = sorted([d for d in images_dir.iterdir() if d.is_dir()])
 
     with tqdm(total=scan_limit if scan_limit else None, desc="Scanning samples", unit="samples") as pbar:
         for video_dir in video_dirs:
@@ -102,9 +102,9 @@ def find_valid_samples(data_root, test_samples=None):
                 shot_id = shot_dir.name
                 sample_name = f"{video_id}/{shot_id}"
 
-                # Check for Monst3r NULL directory with frames
-                null_dir = shot_dir / 'NULL'
-                if not null_dir.exists():
+                # In new structure, frames are directly in the shot directory
+                curr_frames_dir = shot_dir
+                if not curr_frames_dir.exists():
                     continue
 
                 # Check for required files in Dataset directory
@@ -135,7 +135,7 @@ def find_valid_samples(data_root, test_samples=None):
                         'id': sample_name,
                         'instruction': instruction,
                         'transforms_path': transforms_path,
-                        'frames_dir': null_dir,
+                        'frames_dir': curr_frames_dir,
                         'caption_data': caption_data
                     })
 
@@ -172,27 +172,34 @@ def process_single_sample(sample, output_path):
         if len(frames_data) < 2:
             return
 
-        # Get list of frame images from Monst3r NULL directory
+        # Get list of frame images from Images directory
         frames_dir = sample['frames_dir']
-        frame_files = sorted(frames_dir.glob('frame_*.png'))
+        # Changed to .jpg as requested
+        frame_files = sorted(frames_dir.glob('frame_*.jpg'))
 
         if len(frame_files) == 0:
             print(f"Warning: No frame images found in {frames_dir}")
             return
 
         # Match number of frames with trajectory length
-        # Trajectory has 120 frames, but video might have different number
-        # We'll use the minimum of the two
-        num_frames = min(len(frame_files), len(frames_data))
-
-        if num_frames < 2:
+        # Trajectory has fixed length (e.g. 120), video has variable length
+        # We must resample video frames to match trajectory progress
+        traj_len = len(frames_data)
+        video_len = len(frame_files)
+        
+        if video_len < 2 or traj_len < 2:
             return
 
         # Process each frame with its corresponding trajectory
         episode_steps = []
-        for t in range(num_frames - 1):
+        for t in range(traj_len - 1):
+            # Calculate corresponding frame index based on progress
+            # map t (0 to traj_len-1) to video index
+            frame_idx = int((t / traj_len) * video_len)
+            frame_idx = min(frame_idx, video_len - 1)
+            
             # Load the specific frame image
-            frame_path = frame_files[t]
+            frame_path = frame_files[frame_idx]
             frame_image = cv2.imread(str(frame_path))
 
             if frame_image is None:

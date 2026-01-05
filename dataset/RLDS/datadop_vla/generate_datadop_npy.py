@@ -55,10 +55,10 @@ def calculate_relative_pose_7d(pose_start, pose_end):
     # 'xyz' euler angles in radians
     euler_delta = Rotation.from_matrix(T_delta[:3, :3]).as_euler('xyz', degrees=False)
 
-    # Add 7th dimension as placeholder (for gripper/zoom)
-    gripper_placeholder = np.array([-1.0], dtype=np.float32)
+    # Add 7th dimension: 0.0 for normal steps, will be set to 1.0 for the last step
+    terminate_flag = np.array([0.0], dtype=np.float32)
 
-    return np.concatenate([translation_delta, euler_delta, gripper_placeholder]).astype(np.float32)
+    return np.concatenate([translation_delta, euler_delta, terminate_flag]).astype(np.float32)
 
 
 def find_valid_samples(data_root, test_samples=None):
@@ -227,6 +227,10 @@ def process_single_sample(sample, output_path):
                 'language_instruction': sample['instruction'],
                 'caption_data': sample['caption_data']
             })
+
+        # Set the termination flag (7th dimension) of the LAST action to 1.0
+        if len(episode_steps) > 0:
+            episode_steps[-1]['action'][-1] = 1.0
 
         if len(episode_steps) == 0:
             print(f"Warning: No valid steps generated for {sample['id']}")

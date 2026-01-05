@@ -25,7 +25,7 @@ class LMM(nn.Module):
         self.opt = opt
 
         if opt.cond_mode == 'text':
-            pipe = StableDiffusionPipeline.from_pretrained('stabilityai/stable-diffusion-2-1-base')
+            pipe = StableDiffusionPipeline.from_pretrained('Manojb/stable-diffusion-2-1-base')
             self.tokenizer = pipe.tokenizer
             self.text_encoder = pipe.text_encoder
             if opt.freeze_encoder:
@@ -43,7 +43,7 @@ class LMM(nn.Module):
             self.norm_cond = nn.LayerNorm(opt.hidden_dim)
         elif opt.cond_mode == 'image+text':
             # assert not opt.freeze_encoder
-            pipe = StableDiffusionPipeline.from_pretrained('stabilityai/stable-diffusion-2-1-base')
+            pipe = StableDiffusionPipeline.from_pretrained('Manojb/stable-diffusion-2-1-base')
             self.tokenizer = pipe.tokenizer
             self.text_encoder = pipe.text_encoder
             self.normalize_image = partial(TF.normalize, mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711)) # ref: https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/blob/main/preprocessor_config.json#L6
@@ -71,7 +71,7 @@ class LMM(nn.Module):
             self.norm_cond = nn.LayerNorm(opt.hidden_dim)
             
         elif opt.cond_mode == 'depth+image+text':
-            pipe = StableDiffusionPipeline.from_pretrained('stabilityai/stable-diffusion-2-1-base')
+            pipe = StableDiffusionPipeline.from_pretrained('Manojb/stable-diffusion-2-1-base')
             self.tokenizer = pipe.tokenizer
             self.text_encoder = pipe.text_encoder
             self.normalize_image = partial(TF.normalize, mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711)) # ref: https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/blob/main/preprocessor_config.json#L6
